@@ -1,11 +1,56 @@
 import { AnalyzedMood } from './sentimentAnalysis';
+import { JournalEntry } from '../types';
 
-export interface JournalEntry {
-  mood: AnalyzedMood;
-  content: string;
-  date: Date;
-  confidence?: number;
-  aiAnalysis?: string;
+export interface HourlyMoodReport {
+  hour: number; // 0-23
+  count: number;
+  dominantMood: string;
+  moodDistribution: Record<string, number>;
+}
+
+export function getHourlyMoodBreakdown(entries: JournalEntry[]): HourlyMoodReport[] {
+  const hourlyData: Record<number, { count: number; moods: Record<string, number> }> = {};
+
+  // Initialize hours 0-23
+  for (let i = 0; i < 24; i++) {
+    hourlyData[i] = { count: 0, moods: {} };
+  }
+
+  // Aggregate data
+  entries.forEach(entry => {
+    const date = new Date(entry.date);
+    const hour = date.getHours();
+    
+    // Safety check if date is invalid
+    if (isNaN(hour)) return;
+
+    hourlyData[hour].count++;
+    
+    if (!hourlyData[hour].moods[entry.mood]) {
+      hourlyData[hour].moods[entry.mood] = 0;
+    }
+    hourlyData[hour].moods[entry.mood]++;
+  });
+
+  // Format report
+  return Object.entries(hourlyData).map(([hour, data]) => {
+    let dominantMood = 'neutral';
+    let maxCount = 0;
+
+    Object.entries(data.moods).forEach(([mood, count]) => {
+      if (count > maxCount) {
+        maxCount = count;
+        dominantMood = mood;
+      }
+    });
+
+    return {
+      hour: parseInt(hour),
+      count: data.count,
+      dominantMood: data.count > 0 ? dominantMood : 'none',
+      moodDistribution: data.moods
+    };
+  });
 }
 
 export interface MoodAnalytics {
@@ -76,8 +121,8 @@ export function analyzeMoods(entries: JournalEntry[]): MoodAnalytics {
   let neutralCount = 0;
 
   entries.forEach(entry => {
-    moodCounts[entry.mood]++;
-    const category = categorizeMood(entry.mood);
+    moodCounts[entry.mood as AnalyzedMood]++;
+    const category = categorizeMood(entry.mood as AnalyzedMood);
     if (category === 'positive') positiveCount++;
     else if (category === 'negative') negativeCount++;
     else neutralCount++;
@@ -126,8 +171,8 @@ function analyzeRecentTrend(entries: JournalEntry[]): 'improving' | 'declining' 
 
   if (previous.length === 0) return 'stable';
 
-  const recentPositive = recent.filter(e => categorizeMood(e.mood) === 'positive').length;
-  const previousPositive = previous.filter(e => categorizeMood(e.mood) === 'positive').length;
+  const recentPositive = recent.filter(e => categorizeMood(e.mood as AnalyzedMood) === 'positive').length;
+  const previousPositive = previous.filter(e => categorizeMood(e.mood as AnalyzedMood) === 'positive').length;
 
   const recentPositiveRatio = recentPositive / recent.length;
   const previousPositiveRatio = previousPositive / previous.length;
@@ -251,7 +296,7 @@ function generateRewards(
 function calculatePositiveStreak(entries: JournalEntry[]): number {
   let streak = 0;
   for (let i = entries.length - 1; i >= 0; i--) {
-    if (categorizeMood(entries[i].mood) === 'positive') {
+    if (categorizeMood(entries[i].mood as AnalyzedMood) === 'positive') {
       streak++;
     } else {
       break;
